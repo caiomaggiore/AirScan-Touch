@@ -767,8 +767,23 @@ class CalibrationWindow:
         self.current_y = y
         self.data_count += 1
         
-        # If pausing, don't process data
+        # If pausing, check if we should end pause or detect final touch
         if self.is_pausing:
+            # Check if this is the last point and we should detect touch to finish
+            if self.current_point_index >= len(self.points) - 1:
+                # For the last point, detect touch on the yellow point to finish
+                # The yellow point is shown at the center of the screen during final pause
+                center_x = screen_width // 2
+                center_y = screen_height // 2
+                radius = 30  # Slightly larger radius for easier touch detection
+                
+                # Check if the touch is within the yellow point area
+                if (abs(x - center_x) <= radius and abs(y - center_y) <= radius):
+                    print("[CALIBRAÇÃO] Toque detectado no ponto amarelo - finalizando calibração!")
+                    self.finish_calibration()
+                    return
+            
+            # Normal pause logic - wait for timeout
             if self.is_pause_complete():
                 self.end_pause()
                 self.show_current_point()

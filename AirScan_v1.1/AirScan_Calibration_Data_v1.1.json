@@ -1,0 +1,26 @@
+{
+  "points": {
+    "CENTER": {
+      "screen": {
+        "x": 960,
+        "y": 540
+      },
+      "airscan": {
+        "x": 888.27,
+        "y": 666.775
+      }
+    }
+  },
+  "screen": {
+    "width": 1920,
+    "height": 1080
+  },
+  "airscan": {
+    "width": 1920,
+    "height": 1080,
+    "port": 8082
+  },
+  "calibration_level": "basic",
+  "calibration_version": "1.1",
+  "total_points": 1
+}

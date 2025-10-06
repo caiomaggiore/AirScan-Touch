@@ -268,7 +268,7 @@ class AirScanControl:
             
             # Save current directory
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            calibration_script = os.path.join(current_dir, "airscan_calibration_v1.1.py")
+            calibration_script = os.path.join(current_dir, "AirScan_Calibration.py")
             
             # Launch calibration in a new process
             self.calibration_process = subprocess.Popen([sys.executable, calibration_script])

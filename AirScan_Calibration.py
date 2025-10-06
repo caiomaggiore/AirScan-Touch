@@ -340,15 +340,6 @@ class CalibrationWindow:
         """Handle window close event (X button)"""
         print("[CALIBRAÇÃO] Janela fechada - cancelando calibração...")
         self.cleanup()
-        
-        # Start OSC server
-        self.start_osc_server()
-        
-        # Show level selector
-        self.show_level_selector()
-        
-        # Bind escape key
-        self.root.bind('<Escape>', lambda e: self.cleanup())
     
     def show_level_selector(self):
         """Show level selection interface"""
@@ -910,7 +901,7 @@ class CalibrationWindow:
             
             # Get current directory
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            control_script = os.path.join(current_dir, "AirScan_Control_v1.1.py")
+            control_script = os.path.join(current_dir, "AirScan_Control.py")
             
             # Start control system in a new process
             subprocess.Popen([sys.executable, control_script])
@@ -918,7 +909,7 @@ class CalibrationWindow:
             
         except Exception as e:
             print(f"[ERROR] Erro ao reiniciar sistema de controle: {e}")
-            print("[INFO] Execute manualmente: python AirScan_Control_v1.1.py")
+            print("[INFO] Execute manualmente: python AirScan_Control.py")
     
     def start_osc_server(self):
         """Start OSC server to receive coordinates"""
@@ -965,6 +956,9 @@ class CalibrationWindow:
         """Start the calibration window"""
         try:
             print("[CALIBRAÇÃO] Iniciando janela de calibração v1.1...")
+            
+            # Start OSC server first
+            self.start_osc_server()
             
             # Force window to appear immediately
             self.root.update()

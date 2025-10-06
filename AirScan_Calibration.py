@@ -254,6 +254,7 @@ class CalibrationWindow:
         self.calibration_complete = False
         self.current_point_index = 0
         self.points = []
+        self.waiting_for_final_touch = False
         
         # Level selector
         self.level_selector = CalibrationLevelSelector(self)
@@ -523,24 +524,24 @@ class CalibrationWindow:
             justify=tk.CENTER
         )
         
-        # Show instructions based on point status or pause
-        if self.is_pausing:
+        # Show instructions based on point status, pause, or waiting for final touch
+        if self.waiting_for_final_touch:
+            # Waiting for final touch state
+            status_text = f"✅ CALIBRAÇÃO CONCLUÍDA!\n"
+            status_text += f"Todos os {len(self.points)} pontos foram capturados\n\n"
+            status_text += "🟡 TOQUE NO PONTO AMARELO PARA FINALIZAR\n"
+            status_text += "Posicione a mão sobre o ponto amarelo\n"
+            status_text += "e toque para encerrar a calibração"
+        elif self.is_pausing:
             # Pause state - show next point
             next_point_index = self.current_point_index + 1
             elapsed = time.time() - self.pause_start_time
             remaining = max(0, self.pause_duration - elapsed)
             
-            # Check if this is the last point
-            if self.current_point_index >= len(self.points) - 1:
-                status_text = f"Ponto {self.current_point_index + 1} de {len(self.points)} - CONCLUÍDO!\n"
-                status_text += f"🟡 FINALIZANDO... {remaining:.1f}s restantes\n"
-                status_text += "Toque no ponto amarelo para encerrar\n"
-                status_text += "a calibração"
-            else:
-                status_text = f"Ponto {self.current_point_index + 1} de {len(self.points)} - CONCLUÍDO!\n"
-                status_text += f"🟡 REPOSICIONANDO... {remaining:.1f}s restantes\n"
-                status_text += f"Vá para o Ponto {next_point_index + 1} (próximo)\n"
-                status_text += "Aguarde o sinal verde para começar"
+            status_text = f"Ponto {self.current_point_index + 1} de {len(self.points)} - CONCLUÍDO!\n"
+            status_text += f"🟡 REPOSICIONANDO... {remaining:.1f}s restantes\n"
+            status_text += f"Vá para o Ponto {next_point_index + 1} (próximo)\n"
+            status_text += "Aguarde o sinal verde para começar"
         else:
             # Normal point state
             status_text = f"Ponto {self.current_point_index + 1} de {len(self.points)} - {point.name}\n"
@@ -575,7 +576,11 @@ class CalibrationWindow:
         # Draw point with status-based color
         radius = 25
         
-        if self.is_pausing:
+        if self.waiting_for_final_touch:
+            # Show yellow point at center for final touch
+            color = '#ffaa00'  # Yellow - final touch
+            point_to_draw = type('obj', (object,), {'x': screen_width // 2, 'y': screen_height // 2})
+        elif self.is_pausing:
             # During pause, show next point in yellow
             next_point = self.points[self.current_point_index + 1] if self.current_point_index + 1 < len(self.points) else point
             color = '#ffaa00'  # Yellow - repositioning
@@ -621,8 +626,8 @@ class CalibrationWindow:
             fill='#ffffff', width=3
         )
         
-        # Show progress if collecting or pausing
-        if self.is_pausing:
+        # Show progress if collecting or pausing (but not when waiting for final touch)
+        if self.is_pausing and not self.waiting_for_final_touch:
             # Pause progress
             elapsed = time.time() - self.pause_start_time
             if elapsed <= self.pause_duration:
@@ -734,7 +739,9 @@ class CalibrationWindow:
         # Move to next point
         self.current_point_index += 1
         if self.current_point_index >= len(self.points):
-            self.finish_calibration()
+            # Last point completed - wait for user touch to finish
+            self.waiting_for_final_touch = True
+            print(f"[CALIBRAÇÃO] Último ponto concluído - Aguardando toque do usuário para finalizar")
         else:
             # Reset capture state and show next point
             point = self.points[self.current_point_index]
@@ -767,22 +774,21 @@ class CalibrationWindow:
         self.current_y = y
         self.data_count += 1
         
-        # If pausing, check if we should end pause or detect final touch
-        if self.is_pausing:
-            # Check if this is the last point and we should detect touch to finish
-            if self.current_point_index >= len(self.points) - 1:
-                # For the last point, detect touch on the yellow point to finish
-                # The yellow point is shown at the center of the screen during final pause
-                center_x = screen_width // 2
-                center_y = screen_height // 2
-                radius = 30  # Slightly larger radius for easier touch detection
-                
-                # Check if the touch is within the yellow point area
-                if (abs(x - center_x) <= radius and abs(y - center_y) <= radius):
-                    print("[CALIBRAÇÃO] Toque detectado no ponto amarelo - finalizando calibração!")
-                    self.finish_calibration()
-                    return
+        # Check if waiting for final touch
+        if self.waiting_for_final_touch:
+            # Detect touch on the yellow point to finish calibration
+            center_x = screen_width // 2
+            center_y = screen_height // 2
+            radius = 30  # Slightly larger radius for easier touch detection
             
+            # Check if the touch is within the yellow point area
+            if (abs(x - center_x) <= radius and abs(y - center_y) <= radius):
+                print("[CALIBRAÇÃO] Toque detectado no ponto amarelo - finalizando calibração!")
+                self.finish_calibration()
+                return
+        
+        # If pausing, check if we should end pause
+        if self.is_pausing:
             # Normal pause logic - wait for timeout
             if self.is_pause_complete():
                 self.end_pause()

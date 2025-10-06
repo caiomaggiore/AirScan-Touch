@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "release_date": "2025-10-03",
+  "features": [
+    "Sistema de calibração visual",
+    "Controle de mouse via AirScan",
+    "Interface otimizada",
+    "Sistema de cores intuitivo",
+    "Pausa entre pontos",
+    "Detecção de interrupção",
+    "Layout sem sobreposições",
+    "Pontos nas extremidades da tela",
+    "Feedback visual completo",
+    "Dados OSC discretos"
+  ],
+  "technical_specs": {
+    "osc_port": 8082,
+    "calibration_points": 5,
+    "collection_duration": 5.0,
+    "pause_duration": 5.0,
+    "interruption_threshold": 0.5,
+    "log_interval_coords": 0.5,
+    "log_interval_warnings": 1.0
+  },
+  "compatibility": {
+    "python": ">=3.8",
+    "os": ["Windows", "Linux", "macOS"],
+    "dependencies": {
+      "python-osc": ">=1.7.4",
+      "pyautogui": ">=0.9.54",
+      "keyboard": ">=0.13.5"
+    }
+  }
+}

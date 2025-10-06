@@ -761,7 +761,7 @@ class CalibrationWindow:
         if avg_pos:
             print(f"📡 AirScan: ({avg_pos['x']:.2f}, {avg_pos['y']:.2f})")
         print(f"📊 Dados coletados: {len(point.airscan_data['x'])} pontos")
-        print(f"💾 Arquivo: AirScan_Calibration_Data_v1.1.json atualizado")
+        print(f"💾 Arquivo: AirScan_Calibration_Data.json atualizado")
         print("=" * 50)
     
     def handle_osc_data(self, x, y):
@@ -829,7 +829,7 @@ class CalibrationWindow:
     def save_point_data(self, point, avg_pos):
         """Save calibration data for a point"""
         try:
-            with open('AirScan_Calibration_Data_v1.1.json', 'r') as f:
+            with open('AirScan_Calibration_Data.json', 'r') as f:
                 data = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             data = {
@@ -856,13 +856,13 @@ class CalibrationWindow:
         data["total_points"] = len(self.points)
         
         # Save to file
-        with open('AirScan_Calibration_Data_v1.1.json', 'w') as f:
+        with open('AirScan_Calibration_Data.json', 'w') as f:
             json.dump(data, f, indent=2)
         
         print(f"[CALIBRAÇÃO] Dados salvos para {point.name}:")
         print(f"  Tela: ({point.x}, {point.y})")
         print(f"  AirScan: ({avg_pos['x']:.2f}, {avg_pos['y']:.2f})")
-        print(f"[CALIBRAÇÃO] Arquivo AirScan_Calibration_Data_v1.1.json atualizado!")
+        print(f"[CALIBRAÇÃO] Arquivo AirScan_Calibration_Data.json atualizado!")
     
     def finish_calibration(self):
         """Complete the calibration process"""

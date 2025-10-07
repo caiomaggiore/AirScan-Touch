@@ -513,7 +513,7 @@ class CalibrationWindow:
                 justify=tk.RIGHT
             )
         
-        # Show level info
+        # Show level info at top center with proper spacing
         level_info = self.level_selector.levels[self.selected_level]
         level_text = f"{level_info['name']} - {level_info['points']} pontos"
         self.canvas.create_text(
@@ -524,7 +524,17 @@ class CalibrationWindow:
             justify=tk.CENTER
         )
         
-        # Show instructions based on point status, pause, or waiting for final touch
+        # Show point info with proper spacing
+        point_text = f"Ponto {self.current_point_index + 1} de {len(self.points)} - {point.name}"
+        self.canvas.create_text(
+            screen_width // 2, 60,
+            text=point_text,
+            fill='#ffffff',
+            font=('Arial', 14, 'bold'),
+            justify=tk.CENTER
+        )
+        
+        # Show status instructions with proper spacing
         if self.waiting_for_final_touch:
             # Waiting for final touch state
             status_text = f"✅ CALIBRAÇÃO CONCLUÍDA!\n"
@@ -538,38 +548,44 @@ class CalibrationWindow:
             elapsed = time.time() - self.pause_start_time
             remaining = max(0, self.pause_duration - elapsed)
             
-            status_text = f"Ponto {self.current_point_index + 1} de {len(self.points)} - CONCLUÍDO!\n"
+            status_text = f"CONCLUÍDO!\n"
             status_text += f"🟡 REPOSICIONANDO... {remaining:.1f}s restantes\n"
             status_text += f"Vá para o Ponto {next_point_index + 1} (próximo)\n"
             status_text += "Aguarde o sinal verde para começar"
         else:
             # Normal point state
-            status_text = f"Ponto {self.current_point_index + 1} de {len(self.points)} - {point.name}\n"
             status = point.get_status()
             
             if status == "collecting":
                 elapsed = time.time() - point.start_time
                 remaining = max(0, 5.0 - elapsed)
-                status_text += f"🔴 COLETANDO DADOS... {remaining:.1f}s restantes\n"
+                status_text = f"🔴 COLETANDO DADOS... {remaining:.1f}s restantes\n"
                 status_text += "Mantenha a mão FIRME sobre o ponto vermelho\n"
                 status_text += "NÃO MOVA até completar 5 segundos!"
             elif status == "ready":
-                status_text += "🟢 PRONTO PARA RECEBER DADOS\n"
+                status_text = f"🟢 PRONTO PARA RECEBER DADOS\n"
                 status_text += "Posicione a mão sobre o ponto verde\n"
                 status_text += "Aguarde a detecção do AirScan"
             else:
-                status_text += "🟡 AGUARDANDO...\n"
+                status_text = f"🟡 AGUARDANDO...\n"
                 status_text += "Posicione a mão sobre o ponto\n"
                 status_text += "Aguarde a detecção do AirScan"
         
-        status_text += "\n\nESC para cancelar"
-        
-        # Position instructions in center-top area
+        # Position status instructions with proper spacing
         self.canvas.create_text(
-            screen_width // 2, 80,
+            screen_width // 2, 100,
             text=status_text,
             fill='#ffffff',
             font=('Arial', 16, 'bold'),
+            justify=tk.CENTER
+        )
+        
+        # Show ESC instruction at bottom with proper spacing
+        self.canvas.create_text(
+            screen_width // 2, screen_height - 50,
+            text="ESC para cancelar",
+            fill='#888888',
+            font=('Arial', 14),
             justify=tk.CENTER
         )
         

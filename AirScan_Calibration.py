@@ -888,8 +888,13 @@ class CalibrationWindow:
         print("[CALIBRAÇÃO] Finalizando calibração...")
         self.calibration_complete = True
         
+        # Stop OSC server
         if hasattr(self, 'server') and self.server:
-            self.server.shutdown()
+            try:
+                self.server.shutdown()
+                print("[CALIBRAÇÃO] Servidor OSC encerrado")
+            except:
+                pass
         
         # Create a flag file to indicate calibration was cancelled
         try:
@@ -897,11 +902,16 @@ class CalibrationWindow:
                 f.write('cancelled')
         except:
             pass
-            
-        self.root.quit()
         
-        # Reiniciar sistema de controle
-        self.restart_control_system()
+        # Destroy window and exit
+        try:
+            self.root.quit()
+            self.root.destroy()
+        except:
+            pass
+        
+        print("[CALIBRAÇÃO] Sistema encerrado")
+        sys.exit(0)
     
     def restart_control_system(self):
         """Restart the control system after calibration"""
@@ -997,7 +1007,11 @@ class CalibrationWindow:
                     # Ensure window stays focused for ESC to work
                     self.root.focus_set()
                     self.root.update()
-                self.root.after(100, update)
+                    # Only continue loop if not complete
+                    self.root.after(100, update)
+                else:
+                    # Calibration complete, stop update loop
+                    print("[CALIBRAÇÃO] Loop de atualização encerrado")
             
             # Start the update loop
             self.root.after(0, update)

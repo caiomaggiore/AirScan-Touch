@@ -1,13 +1,33 @@
 {
   "points": {
+    "BOTTOM_RIGHT": {
+      "screen": {
+        "x": 1919,
+        "y": 1079
+      },
+      "airscan": {
+        "x": 1612.3756345177665,
+        "y": 1157.5329949238578
+      }
+    },
+    "BOTTOM_LEFT": {
+      "screen": {
+        "x": 0,
+        "y": 1079
+      },
+      "airscan": {
+        "x": 130.1605504587156,
+        "y": 1139.8853211009175
+      }
+    },
     "CENTER": {
       "screen": {
         "x": 960,
         "y": 540
       },
       "airscan": {
-        "x": 888.27,
-        "y": 666.775
+        "x": 884.3116883116883,
+        "y": 728.939393939394
       }
     }
   },
@@ -18,9 +38,9 @@
   "airscan": {
     "width": 1920,
     "height": 1080,
-    "port": 8082
+    "port": 8030
   },
   "calibration_level": "basic",
   "calibration_version": "1.1",
-  "total_points": 1
+  "total_points": 5
 }

@@ -246,11 +246,10 @@ class AirScanControl:
     def start_calibration(self):
         """Launch calibration tool"""
         try:
-            # Cleanup any existing calibration process
+            # Check if calibration is already running
             if self.calibration_process and self.calibration_process.poll() is None:
-                print("Finalizando processo de calibração anterior...")
-                self.calibration_process.terminate()
-                self.calibration_process.wait()
+                print("[CALIBRAÇÃO] Calibração já está em execução! Ignorando chamada...")
+                return
             
             # Stop the main server and ensure port is free
             if self.server:
@@ -295,18 +294,12 @@ class AirScanControl:
                     except:
                         pass
                 else:
-                    print("Processo de calibração finalizado. Recarregando dados...")
+                    print("[CALIBRAÇÃO] Processo de calibração finalizado. Recarregando dados...")
                     self.calibration_data = self.load_calibration()
+                    print("[CALIBRAÇÃO] Dados de calibração atualizados!")
                 
                 self.calibration_complete.set()
-                
-                # A calibração agora reinicia o sistema completo automaticamente
-                print("[CALIBRAÇÃO] Sistema será reiniciado automaticamente pela calibração.")
-                print("[CALIBRAÇÃO] Encerrando processo atual...")
-                
-                # Encerrar este processo para que a calibração possa reiniciar
-                import sys
-                sys.exit(0)
+                print("[CALIBRAÇÃO] Sistema de controle continua ativo.")
         
         # Start monitoring in a separate thread
         monitor_thread = threading.Thread(target=monitor)
@@ -445,14 +438,20 @@ class AirScanControl:
         except:
             pass
         
+        # Finalizar processo de calibração se existir
         if self.calibration_process and self.calibration_process.poll() is None:
             print("[INFO] Finalizando processo de calibração...")
-            self.calibration_process.terminate()
             try:
-                self.calibration_process.wait(timeout=5)
+                self.calibration_process.terminate()
+                self.calibration_process.wait(timeout=3)
+                print("[INFO] Processo de calibração finalizado")
             except subprocess.TimeoutExpired:
+                print("[WARNING] Forçando encerramento do processo de calibração...")
                 self.calibration_process.kill()
+            except Exception as e:
+                print(f"[WARNING] Erro ao finalizar processo de calibração: {e}")
         
+        # Encerrar servidor OSC
         if self.server:
             try:
                 print("[INFO] Encerrando servidor OSC...")
@@ -462,7 +461,8 @@ class AirScanControl:
             except Exception as e:
                 print(f"[WARNING] Erro ao encerrar servidor: {e}")
         
-        print("[INFO] Limpeza concluída.")
+        print("[INFO] Limpeza concluída. Sistema encerrado.")
+        sys.exit(0)
 
 if __name__ == "__main__":
     control = AirScanControl()

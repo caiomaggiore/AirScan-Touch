@@ -14,13 +14,40 @@ import signal
 # Disable PyAutoGUI failsafe
 pyautogui.FAILSAFE = False
 
-# Screen dimensionsCC
+# Screen dimensions
 screen_width, screen_height = pyautogui.size()
 
-# AirScan configuration
+# ====================================
+# CONFIGURAÇÃO DO AIRSCAN
+# ====================================
+AIRSCAN_MODE = "Arena"  # Opções: "Arena" ou "Cave"
 AIRSCAN_PORT = 8030
-DEFAULT_AIRSCAN_WIDTH = 1920
-DEFAULT_AIRSCAN_HEIGHT = 1080
+
+# Configurações padrão por modo
+MODE_CONFIG = {
+    "Arena": {
+        "blob_id": 5,
+        "width": 1920,
+        "height": 1080
+    },
+    "Cave": {
+        "blob_id": 6,
+        "width": 1920,
+        "height": 1080
+    }
+}
+
+# Carrega configuração do modo selecionado
+if AIRSCAN_MODE not in MODE_CONFIG:
+    print(f"[ERROR] Modo '{AIRSCAN_MODE}' inválido! Use 'Arena' ou 'Cave'")
+    sys.exit(1)
+
+CURRENT_CONFIG = MODE_CONFIG[AIRSCAN_MODE]
+BLOB_ID = CURRENT_CONFIG["blob_id"]
+DEFAULT_AIRSCAN_WIDTH = CURRENT_CONFIG["width"]
+DEFAULT_AIRSCAN_HEIGHT = CURRENT_CONFIG["height"]
+
+print(f"[INFO] Modo selecionado: {AIRSCAN_MODE} (Blob {BLOB_ID})")
 
 class AirScanControl:
     def __init__(self):
@@ -311,9 +338,9 @@ class AirScanControl:
         try:
             # Setup OSC dispatcher
             dispatcher = Dispatcher()
-            dispatcher.map("/airscan/blob/6/x", self.handle_mouse_x)
-            dispatcher.map("/airscan/blob/6/y", self.handle_mouse_y)
-            dispatcher.map("/airscan/blob/6/z", self.handle_mouse_click)
+            dispatcher.map(f"/airscan/blob/{BLOB_ID}/x", self.handle_mouse_x)
+            dispatcher.map(f"/airscan/blob/{BLOB_ID}/y", self.handle_mouse_y)
+            dispatcher.map(f"/airscan/blob/{BLOB_ID}/z", self.handle_mouse_click)
             
             # Start OSC server
             self.server = osc_server.ThreadingOSCUDPServer(("0.0.0.0", AIRSCAN_PORT), dispatcher)
@@ -363,9 +390,9 @@ class AirScanControl:
         
         # Setup OSC dispatcher
         dispatcher = Dispatcher()
-        dispatcher.map("/airscan/blob/6/x", self.handle_mouse_x)
-        dispatcher.map("/airscan/blob/6/y", self.handle_mouse_y)
-        dispatcher.map("/airscan/blob/6/z", self.handle_mouse_click)
+        dispatcher.map(f"/airscan/blob/{BLOB_ID}/x", self.handle_mouse_x)
+        dispatcher.map(f"/airscan/blob/{BLOB_ID}/y", self.handle_mouse_y)
+        dispatcher.map(f"/airscan/blob/{BLOB_ID}/z", self.handle_mouse_click)
         
         # Setup keyboard shortcuts
         self.setup_keyboard_shortcuts()

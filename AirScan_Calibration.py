@@ -921,69 +921,83 @@ class CalibrationWindow:
     
     def finish_calibration(self):
         """Complete the calibration process"""
+        print("\n" + "=" * 60)
+        print("✅ CALIBRAÇÃO CONCLUÍDA COM SUCESSO!")
+        print("=" * 60)
         self.calibration_complete = True
-        self.cleanup()
-        print("Calibração concluída! Reiniciando sistema de controle...")
-        self.restart_control_system()
+        
+        # Stop OSC server first
+        if hasattr(self, 'server') and self.server:
+            try:
+                self.server.shutdown()
+                self.server.server_close()
+                print("[CALIBRAÇÃO] Servidor OSC encerrado")
+            except Exception as e:
+                print(f"[WARNING] Erro ao encerrar servidor: {e}")
+        
+        # Wait a bit for port to be released
+        time.sleep(1)
+        
+        # Destroy window properly
+        try:
+            self.root.after_cancel(self.update_job) if hasattr(self, 'update_job') else None
+            self.root.quit()
+            self.root.destroy()
+            print("[CALIBRAÇÃO] Janela encerrada com sucesso")
+        except Exception as e:
+            print(f"[WARNING] Erro ao fechar janela: {e}")
+        
+        # Show completion message
+        print("\n[CALIBRAÇÃO] Processo de calibração finalizado com sucesso!")
+        print(f"[INFO] Modo configurado: {AIRSCAN_MODE} (Blob {BLOB_ID})")
+        print(f"[INFO] Para iniciar o controle, execute: python AirScan_Control.py")
+        print("=" * 60 + "\n")
+        
+        # Exit cleanly
+        sys.exit(0)
     
     def cleanup(self):
-        """Clean up resources"""
-        print("[CALIBRAÇÃO] Finalizando calibração...")
+        """Clean up resources when calibration is cancelled"""
+        print("\n" + "=" * 60)
+        print("⚠️  CALIBRAÇÃO CANCELADA")
+        print("=" * 60)
         self.calibration_complete = True
         
         # Stop OSC server
         if hasattr(self, 'server') and self.server:
             try:
                 self.server.shutdown()
+                self.server.server_close()
                 print("[CALIBRAÇÃO] Servidor OSC encerrado")
-            except:
-                pass
+            except Exception as e:
+                print(f"[WARNING] Erro ao encerrar servidor: {e}")
+        
+        # Wait a bit for port to be released
+        time.sleep(1)
         
         # Create a flag file to indicate calibration was cancelled
         try:
             with open('calibration_cancelled.flag', 'w') as f:
                 f.write('cancelled')
+            print("[CALIBRAÇÃO] Arquivo de cancelamento criado")
         except:
             pass
         
         # Destroy window and exit
         try:
+            self.root.after_cancel(self.update_job) if hasattr(self, 'update_job') else None
             self.root.quit()
             self.root.destroy()
-        except:
-            pass
+            print("[CALIBRAÇÃO] Janela encerrada")
+        except Exception as e:
+            print(f"[WARNING] Erro ao fechar janela: {e}")
         
-        print("[CALIBRAÇÃO] Sistema encerrado")
+        print("\n[CALIBRAÇÃO] Sistema encerrado")
+        print(f"[INFO] Modo estava configurado: {AIRSCAN_MODE} (Blob {BLOB_ID})")
+        print(f"[INFO] Para iniciar o controle, execute: python AirScan_Control.py")
+        print("=" * 60 + "\n")
         sys.exit(0)
     
-    def restart_control_system(self):
-        """Restart the control system after calibration"""
-        try:
-            import subprocess
-            import sys
-            import os
-            
-            print("[CALIBRAÇÃO] Reiniciando sistema de controle...")
-            
-            # Ensure port is free before starting control system
-            if self.is_port_in_use(AIRSCAN_PORT):
-                print(f"[CALIBRAÇÃO] Porta {AIRSCAN_PORT} ainda em uso, aguardando...")
-                if not self.wait_for_port_free(AIRSCAN_PORT, timeout=5):
-                    print(f"[CALIBRAÇÃO] Forçando liberação da porta {AIRSCAN_PORT}...")
-                    self.kill_processes_using_port(AIRSCAN_PORT)
-                    time.sleep(2)  # Give time for port to be released
-            
-            # Get current directory
-            current_dir = os.path.dirname(os.path.abspath(__file__))
-            control_script = os.path.join(current_dir, "AirScan_Control.py")
-            
-            # Start control system in a new process
-            subprocess.Popen([sys.executable, control_script])
-            print("[CALIBRAÇÃO] Sistema de controle reiniciado!")
-            
-        except Exception as e:
-            print(f"[ERROR] Erro ao reiniciar sistema de controle: {e}")
-            print("[INFO] Execute manualmente: python AirScan_Control.py")
     
     def start_osc_server(self):
         """Start OSC server to receive coordinates"""
@@ -1049,26 +1063,35 @@ class CalibrationWindow:
                     
                     # Ensure window stays focused for ESC to work
                     self.root.focus_set()
-                    self.root.update()
+                    try:
+                        self.root.update()
+                    except:
+                        # Window was destroyed
+                        return
                     # Only continue loop if not complete
-                    self.root.after(100, update)
+                    self.update_job = self.root.after(100, update)
                 else:
                     # Calibration complete, stop update loop
                     print("[CALIBRAÇÃO] Loop de atualização encerrado")
             
             # Start the update loop
-            self.root.after(0, update)
+            self.update_job = self.root.after(0, update)
             
             print("[CALIBRAÇÃO] Janela de calibração v1.1 ativa!")
             print("[CALIBRAÇÃO] Aguardando seleção de nível...")
             print(f"[CALIBRAÇÃO] Servidor OSC escutando em 0.0.0.0:{AIRSCAN_PORT}")
-            print("[CALIBRAÇÃO] Após finalizar, o sistema de controle será reiniciado automaticamente")
+            print(f"[CALIBRAÇÃO] Modo: {AIRSCAN_MODE} (Blob {BLOB_ID})")
+            print("[CALIBRAÇÃO] Pressione ESC para cancelar a qualquer momento")
             
             self.root.mainloop()
             
+        except KeyboardInterrupt:
+            print("\n[CALIBRAÇÃO] Interrupção detectada (Ctrl+C)")
+            self.cleanup()
         except Exception as e:
             print(f"[ERROR] Erro durante a calibração: {e}")
-        finally:
+            import traceback
+            traceback.print_exc()
             self.cleanup()
 
 if __name__ == "__main__":

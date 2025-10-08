@@ -8,6 +8,7 @@ import os
 import time
 import threading
 from threading import Event
+from collections import deque
 import socket
 import signal
 
@@ -22,6 +23,11 @@ screen_width, screen_height = pyautogui.size()
 # ====================================
 AIRSCAN_MODE = "Arena"  # Opções: "Arena" ou "Cave"
 AIRSCAN_PORT = 8030
+
+# Configurações de Performance
+MOUSE_UPDATE_RATE = 60  # Hz - Taxa de atualização do mouse (60Hz recomendado)
+SMOOTHING_SAMPLES = 5   # Número de amostras para média móvel (3-10 recomendado)
+MOUSE_RELEASE_DELAY = 0.5  # segundos - Delay antes de soltar o mouse (grace period)
 
 # Configurações padrão por modo
 MODE_CONFIG = {
@@ -64,6 +70,19 @@ class AirScanControl:
         self.log_interval = 0.5  # 500ms
         self.last_warning_time = 0
         self.warning_interval = 1.0  # 1 segundo
+        
+        # Throttling configurável (padrão 60Hz = ~16.67ms)
+        self.last_update_time = 0
+        self.update_interval = 1.0 / MOUSE_UPDATE_RATE
+        
+        # Suavização por média móvel configurável
+        self.smoothing_window = SMOOTHING_SAMPLES
+        self.x_history = deque(maxlen=self.smoothing_window)
+        self.y_history = deque(maxlen=self.smoothing_window)
+        
+        # Grace period para soltar o mouse
+        self.release_timer = None
+        self.pending_release = False
         
         # Setup signal handlers for graceful shutdown
         self.setup_signal_handlers()
@@ -223,16 +242,38 @@ class AirScanControl:
         )
     
     def update_mouse_position(self):
-        """Update mouse position based on AirScan coordinates"""
+        """Update mouse position based on AirScan coordinates with throttling and smoothing"""
         if self.norm_x is not None and self.norm_y is not None:
             try:
+                current_time = time.time()
+                
+                # Throttling: limita taxa de atualização
+                if current_time - self.last_update_time < self.update_interval:
+                    return  # Ignora esta atualização para manter taxa configurada
+                
+                self.last_update_time = current_time
+                
+                # Obter coordenadas calibradas
                 pixel_x, pixel_y = self.get_calibrated_coordinates(self.norm_x, self.norm_y)
-                pyautogui.moveTo(pixel_x, pixel_y)
+                
+                # Adicionar ao histórico para suavização
+                self.x_history.append(pixel_x)
+                self.y_history.append(pixel_y)
+                
+                # Calcular média móvel
+                smoothed_x = sum(self.x_history) / len(self.x_history)
+                smoothed_y = sum(self.y_history) / len(self.y_history)
+                
+                # Arredondar para inteiro
+                final_x = int(smoothed_x)
+                final_y = int(smoothed_y)
+                
+                # Mover mouse para posição suavizada
+                pyautogui.moveTo(final_x, final_y)
                 
                 # Log coordinates with throttling (500ms)
-                current_time = time.time()
                 if current_time - self.last_log_time >= self.log_interval:
-                    print(f"[AIRSCAN] X:{self.norm_x:.2f} Y:{self.norm_y:.2f} -> Tela({pixel_x}, {pixel_y})")
+                    print(f"[AIRSCAN] X:{self.norm_x:.2f} Y:{self.norm_y:.2f} -> Tela({final_x}, {final_y}) [Suavizado: {len(self.x_history)} amostras]")
                     self.last_log_time = current_time
                     
             except Exception as e:
@@ -262,13 +303,43 @@ class AirScanControl:
                 print(f"[WARNING] Failed to write coordinates to temp file: {e}")
     
     def handle_mouse_click(self, unused_addr, z):
-        """Handle click state from AirScan"""
-        if z == 1 and not self.mouse_pressed:
-            pyautogui.mouseDown()
-            self.mouse_pressed = True
-        elif z == 0 and self.mouse_pressed:
-            pyautogui.mouseUp()
-            self.mouse_pressed = False
+        """Handle click state from AirScan with grace period"""
+        if z == 1:
+            # Toque detectado
+            if self.pending_release:
+                # Cancelar timer de release se estava aguardando
+                if self.release_timer and self.release_timer.is_alive():
+                    self.release_timer.cancel()
+                    # Log apenas em modo debug (descomente se necessário)
+                    # print("[MOUSE] Release cancelado - toque retomado dentro do grace period")
+                self.pending_release = False
+                self.release_timer = None
+            
+            if not self.mouse_pressed:
+                # Pressionar mouse pela primeira vez
+                pyautogui.mouseDown()
+                self.mouse_pressed = True
+                # print("[MOUSE] Mouse pressionado")
+                
+        elif z == 0:
+            # Toque perdido
+            if self.mouse_pressed and not self.pending_release:
+                # Iniciar grace period ao invés de soltar imediatamente
+                self.pending_release = True
+                
+                def delayed_release():
+                    """Função executada após o grace period"""
+                    if self.pending_release and self.mouse_pressed:
+                        pyautogui.mouseUp()
+                        self.mouse_pressed = False
+                        self.pending_release = False
+                        # print(f"[MOUSE] Mouse liberado após {MOUSE_RELEASE_DELAY}s sem sinal")
+                
+                # Iniciar timer
+                self.release_timer = threading.Timer(MOUSE_RELEASE_DELAY, delayed_release)
+                self.release_timer.daemon = True
+                self.release_timer.start()
+                # print(f"[MOUSE] Grace period iniciado ({MOUSE_RELEASE_DELAY}s) - aguardando confirmação")
     
     def start_calibration(self):
         """Launch calibration tool"""
@@ -388,6 +459,14 @@ class AirScanControl:
         print("AIRSCAN CONTROL - INICIANDO")
         print("=" * 50)
         
+        # Display configuration
+        print(f"[CONFIG] Modo: {AIRSCAN_MODE} (Blob {BLOB_ID})")
+        print(f"[CONFIG] Taxa de atualização: {MOUSE_UPDATE_RATE}Hz (~{1000/MOUSE_UPDATE_RATE:.1f}ms)")
+        print(f"[CONFIG] Suavização: {SMOOTHING_SAMPLES} amostras (média móvel)")
+        print(f"[CONFIG] Grace period: {MOUSE_RELEASE_DELAY}s (tolerância ao soltar)")
+        print(f"[CONFIG] Resolução AirScan: {DEFAULT_AIRSCAN_WIDTH}x{DEFAULT_AIRSCAN_HEIGHT}")
+        print(f"[CONFIG] Resolução Tela: {screen_width}x{screen_height}")
+        
         # Setup OSC dispatcher
         dispatcher = Dispatcher()
         dispatcher.map(f"/airscan/blob/{BLOB_ID}/x", self.handle_mouse_x)
@@ -464,6 +543,11 @@ class AirScanControl:
             print("[INFO] Atalhos de teclado removidos")
         except:
             pass
+        
+        # Cancelar timer de release se existir
+        if self.release_timer and self.release_timer.is_alive():
+            self.release_timer.cancel()
+            print("[INFO] Timer de release cancelado")
         
         # Finalizar processo de calibração se existir
         if self.calibration_process and self.calibration_process.poll() is None:

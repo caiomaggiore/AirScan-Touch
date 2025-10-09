@@ -18,7 +18,7 @@ screen_width, screen_height = pyautogui.size()
 # ====================================
 # CONFIGURAÇÃO DO AIRSCAN
 # ====================================
-AIRSCAN_MODE = "Arena"  # Opções: "Arena" ou "Cave"
+AIRSCAN_MODE = "Cave"  # Opções: "Arena" ou "Cave"
 AIRSCAN_PORT = 8030
 
 # Configurações padrão por modo
@@ -158,6 +158,256 @@ class CalibrationPoint:
         else:
             return "waiting"  # Yellow
 
+class AreaSelector:
+    """Area selection tool similar to Windows Snipping Tool"""
+    def __init__(self, parent):
+        self.parent = parent
+        self.selected_area = None
+        self.start_x = None
+        self.start_y = None
+        self.current_x = None
+        self.current_y = None
+        self.is_selecting = False
+        self.selection_rect = None
+        self.selection_complete = False
+        
+    def show(self, canvas):
+        """Show area selection interface"""
+        canvas.delete("all")
+        
+        # Dark semi-transparent overlay
+        canvas.create_rectangle(
+            0, 0, screen_width, screen_height,
+            fill='#000000', stipple='gray50', tags="overlay"
+        )
+        
+        # Title
+        canvas.create_text(
+            screen_width // 2, 50,
+            text="SELEÇÃO DE ÁREA DE CALIBRAÇÃO",
+            font=('Segoe UI', 36, 'bold'),
+            fill='#00d4ff',
+            tags="title"
+        )
+        
+        # Instructions
+        instructions = [
+            "Selecione a área da tela onde o LED/projeção será exibido:",
+            "",
+            "🖱️  ARRASTAR: Clique e arraste para selecionar área customizada",
+            "⌨️  F: Pressione F para usar tela cheia",
+            "⌨️  ESC: Cancelar calibração"
+        ]
+        
+        y_offset = 120
+        for i, line in enumerate(instructions):
+            canvas.create_text(
+                screen_width // 2, y_offset + (i * 40),
+                text=line,
+                font=('Segoe UI', 18 if i < 2 else 16, 'bold' if i == 0 else 'normal'),
+                fill='#ffffff' if i < 2 else '#b0b0b0',
+                tags="instructions"
+            )
+        
+        # Bind mouse events for area selection
+        canvas.bind("<ButtonPress-1>", self.on_mouse_down)
+        canvas.bind("<B1-Motion>", self.on_mouse_drag)
+        canvas.bind("<ButtonRelease-1>", self.on_mouse_up)
+        canvas.bind("<KeyPress-f>", self.on_fullscreen_key)
+        canvas.bind("<KeyPress-F>", self.on_fullscreen_key)
+        
+        # Make canvas focusable for keyboard events
+        canvas.focus_set()
+        
+        # Visual hint - show screen border
+        canvas.create_rectangle(
+            5, 5, screen_width - 5, screen_height - 5,
+            outline='#00d4ff', width=3, dash=(10, 5),
+            tags="screen_border"
+        )
+    
+    def on_mouse_down(self, event):
+        """Mouse button pressed - start selection"""
+        self.start_x = event.x
+        self.start_y = event.y
+        self.is_selecting = True
+        
+        # Clear previous selection
+        if self.selection_rect:
+            self.parent.canvas.delete(self.selection_rect)
+            self.selection_rect = None
+    
+    def on_mouse_drag(self, event):
+        """Mouse dragged - update selection rectangle"""
+        if not self.is_selecting:
+            return
+        
+        self.current_x = event.x
+        self.current_y = event.y
+        
+        # Remove old rectangle
+        if self.selection_rect:
+            self.parent.canvas.delete(self.selection_rect)
+        
+        # Calculate rectangle coordinates
+        x1 = min(self.start_x, self.current_x)
+        y1 = min(self.start_y, self.current_y)
+        x2 = max(self.start_x, self.current_x)
+        y2 = max(self.start_y, self.current_y)
+        
+        # Draw selection rectangle with semi-transparent fill
+        self.selection_rect = self.parent.canvas.create_rectangle(
+            x1, y1, x2, y2,
+            outline='#00ff00', width=3,
+            fill='#00ff00', stipple='gray25',
+            tags="selection"
+        )
+        
+        # Show dimensions
+        width = abs(x2 - x1)
+        height = abs(y2 - y1)
+        self.parent.canvas.create_text(
+            (x1 + x2) // 2, y1 - 20,
+            text=f"{width} x {height} pixels",
+            font=('Segoe UI', 14, 'bold'),
+            fill='#00ff00',
+            tags="selection"
+        )
+    
+    def on_mouse_up(self, event):
+        """Mouse button released - finalize selection"""
+        if not self.is_selecting:
+            return
+        
+        self.is_selecting = False
+        self.current_x = event.x
+        self.current_y = event.y
+        
+        # Calculate final area
+        x1 = min(self.start_x, self.current_x)
+        y1 = min(self.start_y, self.current_y)
+        x2 = max(self.start_x, self.current_x)
+        y2 = max(self.start_y, self.current_y)
+        
+        # Validate minimum size (at least 200x200)
+        width = abs(x2 - x1)
+        height = abs(y2 - y1)
+        
+        if width < 200 or height < 200:
+            self.parent.canvas.delete("selection")
+            self.parent.canvas.create_text(
+                screen_width // 2, screen_height - 100,
+                text="⚠️ Área muito pequena! Mínimo: 200x200 pixels",
+                font=('Segoe UI', 20, 'bold'),
+                fill='#ff3333',
+                tags="error"
+            )
+            self.parent.root.after(2000, lambda: self.parent.canvas.delete("error"))
+            return
+        
+        # Save selected area
+        self.selected_area = {
+            "x1": int(x1),
+            "y1": int(y1),
+            "x2": int(x2),
+            "y2": int(y2),
+            "width": int(width),
+            "height": int(height)
+        }
+        
+        self.selection_complete = True
+        
+        # Show confirmation
+        self.show_confirmation()
+    
+    def on_fullscreen_key(self, event):
+        """F key pressed - select full screen"""
+        self.selected_area = {
+            "x1": 0,
+            "y1": 0,
+            "x2": screen_width,
+            "y2": screen_height,
+            "width": screen_width,
+            "height": screen_height
+        }
+        
+        self.selection_complete = True
+        
+        # Show fullscreen selection
+        self.parent.canvas.delete("all")
+        self.parent.canvas.create_rectangle(
+            0, 0, screen_width, screen_height,
+            outline='#00ff00', width=5,
+            fill='#00ff00', stipple='gray25'
+        )
+        
+        self.parent.canvas.create_text(
+            screen_width // 2, screen_height // 2 - 50,
+            text="✅ TELA CHEIA SELECIONADA",
+            font=('Segoe UI', 48, 'bold'),
+            fill='#00ff00'
+        )
+        
+        self.parent.canvas.create_text(
+            screen_width // 2, screen_height // 2 + 50,
+            text=f"{screen_width} x {screen_height} pixels",
+            font=('Segoe UI', 24),
+            fill='#ffffff'
+        )
+        
+        # Proceed after delay
+        self.parent.root.after(1500, self.proceed_to_level_selection)
+    
+    def show_confirmation(self):
+        """Show confirmation message after area selection"""
+        self.parent.canvas.delete("all")
+        
+        # Highlight selected area
+        area = self.selected_area
+        self.parent.canvas.create_rectangle(
+            area["x1"], area["y1"], area["x2"], area["y2"],
+            outline='#00ff00', width=5,
+            fill='#00ff00', stipple='gray25',
+            tags="highlight"
+        )
+        
+        self.parent.canvas.create_text(
+            screen_width // 2, 80,
+            text="✅ ÁREA SELECIONADA",
+            font=('Segoe UI', 42, 'bold'),
+            fill='#00ff00',
+            tags="confirm"
+        )
+        
+        self.parent.canvas.create_text(
+            screen_width // 2, 160,
+            text=f"{area['width']} x {area['height']} pixels",
+            font=('Segoe UI', 24),
+            fill='#ffffff',
+            tags="confirm"
+        )
+        
+        self.parent.canvas.create_text(
+            screen_width // 2, 220,
+            text="Prosseguindo para seleção de nível...",
+            font=('Segoe UI', 18),
+            fill='#b0b0b0',
+            tags="confirm"
+        )
+        
+        # Proceed immediately (remove delay for better UX)
+        self.parent.root.after(1500, self.proceed_to_level_selection)
+    
+    def proceed_to_level_selection(self):
+        """Move to level selection after area is confirmed"""
+        print(f"[CALIBRAÇÃO] Área selecionada: {self.selected_area['width']}x{self.selected_area['height']}")
+        print(f"[CALIBRAÇÃO] Transicionando para seleção de nível...")
+        self.parent.showing_area_selector = False
+        self.parent.showing_level_selector = True
+        # Clear canvas for next step
+        self.parent.canvas.delete("all")
+        # Force redraw will happen in next update loop
+
 class CalibrationLevelSelector:
     def __init__(self, parent):
         self.parent = parent
@@ -186,63 +436,90 @@ class CalibrationLevelSelector:
             }
         }
     
-    def generate_points(self, level):
-        """Generate calibration points based on level"""
+    def generate_points(self, level, selected_area=None):
+        """Generate calibration points based on level and selected area"""
         if level == "basic":
-            return self._generate_basic_points()
+            return self._generate_basic_points(selected_area)
         elif level == "advanced":
-            return self._generate_advanced_points()
+            return self._generate_advanced_points(selected_area)
         elif level == "professional":
-            return self._generate_professional_points()
+            return self._generate_professional_points(selected_area)
         return []
     
-    def _generate_basic_points(self):
-        """Generate 5 basic points (corners + center)"""
+    def _generate_basic_points(self, area=None):
+        """Generate 5 basic points (corners + center) within selected area"""
+        if area is None:
+            area = {"x1": 0, "y1": 0, "x2": screen_width, "y2": screen_height}
+        
+        x1, y1, x2, y2 = area["x1"], area["y1"], area["x2"], area["y2"]
+        cx = (x1 + x2) // 2
+        cy = (y1 + y2) // 2
+        
         return [
-            CalibrationPoint(0, 0, "TOP_LEFT"),
-            CalibrationPoint(screen_width - 1, 0, "TOP_RIGHT"),
-            CalibrationPoint(screen_width - 1, screen_height - 1, "BOTTOM_RIGHT"),
-            CalibrationPoint(0, screen_height - 1, "BOTTOM_LEFT"),
-            CalibrationPoint(screen_width // 2, screen_height // 2, "CENTER")
+            CalibrationPoint(x1, y1, "TOP_LEFT"),
+            CalibrationPoint(x2 - 1, y1, "TOP_RIGHT"),
+            CalibrationPoint(x2 - 1, y2 - 1, "BOTTOM_RIGHT"),
+            CalibrationPoint(x1, y2 - 1, "BOTTOM_LEFT"),
+            CalibrationPoint(cx, cy, "CENTER")
         ]
     
-    def _generate_advanced_points(self):
-        """Generate 9 advanced points (corners + edges + center)"""
+    def _generate_advanced_points(self, area=None):
+        """Generate 9 advanced points (corners + edges + center) within selected area"""
+        if area is None:
+            area = {"x1": 0, "y1": 0, "x2": screen_width, "y2": screen_height}
+        
+        x1, y1, x2, y2 = area["x1"], area["y1"], area["x2"], area["y2"]
+        cx = (x1 + x2) // 2
+        cy = (y1 + y2) // 2
+        
         return [
             # Corners
-            CalibrationPoint(0, 0, "TOP_LEFT"),
-            CalibrationPoint(screen_width - 1, 0, "TOP_RIGHT"),
-            CalibrationPoint(screen_width - 1, screen_height - 1, "BOTTOM_RIGHT"),
-            CalibrationPoint(0, screen_height - 1, "BOTTOM_LEFT"),
+            CalibrationPoint(x1, y1, "TOP_LEFT"),
+            CalibrationPoint(x2 - 1, y1, "TOP_RIGHT"),
+            CalibrationPoint(x2 - 1, y2 - 1, "BOTTOM_RIGHT"),
+            CalibrationPoint(x1, y2 - 1, "BOTTOM_LEFT"),
             # Edges
-            CalibrationPoint(screen_width // 2, 0, "TOP_CENTER"),
-            CalibrationPoint(screen_width - 1, screen_height // 2, "RIGHT_CENTER"),
-            CalibrationPoint(screen_width // 2, screen_height - 1, "BOTTOM_CENTER"),
-            CalibrationPoint(0, screen_height // 2, "LEFT_CENTER"),
+            CalibrationPoint(cx, y1, "TOP_CENTER"),
+            CalibrationPoint(x2 - 1, cy, "RIGHT_CENTER"),
+            CalibrationPoint(cx, y2 - 1, "BOTTOM_CENTER"),
+            CalibrationPoint(x1, cy, "LEFT_CENTER"),
             # Center
-            CalibrationPoint(screen_width // 2, screen_height // 2, "CENTER")
+            CalibrationPoint(cx, cy, "CENTER")
         ]
     
-    def _generate_professional_points(self):
-        """Generate 13 professional points (corners + edges + quarters + center)"""
+    def _generate_professional_points(self, area=None):
+        """Generate 13 professional points (corners + edges + quarters + center) within selected area"""
+        if area is None:
+            area = {"x1": 0, "y1": 0, "x2": screen_width, "y2": screen_height}
+        
+        x1, y1, x2, y2 = area["x1"], area["y1"], area["x2"], area["y2"]
+        width = x2 - x1
+        height = y2 - y1
+        cx = x1 + width // 2
+        cy = y1 + height // 2
+        q1x = x1 + width // 4
+        q1y = y1 + height // 4
+        q3x = x1 + 3 * width // 4
+        q3y = y1 + 3 * height // 4
+        
         return [
             # Corners
-            CalibrationPoint(0, 0, "TOP_LEFT"),
-            CalibrationPoint(screen_width - 1, 0, "TOP_RIGHT"),
-            CalibrationPoint(screen_width - 1, screen_height - 1, "BOTTOM_RIGHT"),
-            CalibrationPoint(0, screen_height - 1, "BOTTOM_LEFT"),
+            CalibrationPoint(x1, y1, "TOP_LEFT"),
+            CalibrationPoint(x2 - 1, y1, "TOP_RIGHT"),
+            CalibrationPoint(x2 - 1, y2 - 1, "BOTTOM_RIGHT"),
+            CalibrationPoint(x1, y2 - 1, "BOTTOM_LEFT"),
             # Edges
-            CalibrationPoint(screen_width // 2, 0, "TOP_CENTER"),
-            CalibrationPoint(screen_width - 1, screen_height // 2, "RIGHT_CENTER"),
-            CalibrationPoint(screen_width // 2, screen_height - 1, "BOTTOM_CENTER"),
-            CalibrationPoint(0, screen_height // 2, "LEFT_CENTER"),
+            CalibrationPoint(cx, y1, "TOP_CENTER"),
+            CalibrationPoint(x2 - 1, cy, "RIGHT_CENTER"),
+            CalibrationPoint(cx, y2 - 1, "BOTTOM_CENTER"),
+            CalibrationPoint(x1, cy, "LEFT_CENTER"),
             # Quarters
-            CalibrationPoint(screen_width // 4, screen_height // 4, "TOP_LEFT_QUARTER"),
-            CalibrationPoint(3 * screen_width // 4, screen_height // 4, "TOP_RIGHT_QUARTER"),
-            CalibrationPoint(3 * screen_width // 4, 3 * screen_height // 4, "BOTTOM_RIGHT_QUARTER"),
-            CalibrationPoint(screen_width // 4, 3 * screen_height // 4, "BOTTOM_LEFT_QUARTER"),
+            CalibrationPoint(q1x, q1y, "TOP_LEFT_QUARTER"),
+            CalibrationPoint(q3x, q1y, "TOP_RIGHT_QUARTER"),
+            CalibrationPoint(q3x, q3y, "BOTTOM_RIGHT_QUARTER"),
+            CalibrationPoint(q1x, q3y, "BOTTOM_LEFT_QUARTER"),
             # Center
-            CalibrationPoint(screen_width // 2, screen_height // 2, "CENTER")
+            CalibrationPoint(cx, cy, "CENTER")
         ]
 
 class CalibrationWindow:
@@ -283,9 +560,14 @@ class CalibrationWindow:
         self.points = []
         self.waiting_for_final_touch = False
         
-        # Level selector
+        # Area selector (FIRST step)
+        self.area_selector = AreaSelector(self)
+        self.showing_area_selector = True
+        self.selected_area = None
+        
+        # Level selector (SECOND step)
         self.level_selector = CalibrationLevelSelector(self)
-        self.showing_level_selector = True
+        self.showing_level_selector = False
         self.selected_level = None
     
     def is_port_in_use(self, port):
@@ -490,11 +772,16 @@ class CalibrationWindow:
         self.showing_level_selector = False
         self.selected_level = level
         
-        # Generate points for selected level
-        self.points = self.level_selector.generate_points(level)
+        # Get selected area from area selector
+        self.selected_area = self.area_selector.selected_area
+        
+        # Generate points for selected level within the selected area
+        self.points = self.level_selector.generate_points(level, self.selected_area)
         self.current_point_index = 0
         
+        area_info = f"{self.selected_area['width']}x{self.selected_area['height']}" if self.selected_area else "tela cheia"
         print(f"[CALIBRAÇÃO] Iniciando calibração {level.upper()} com {len(self.points)} pontos")
+        print(f"[CALIBRAÇÃO] Área de calibração: {area_info}")
         
         # Show first point
         self.show_current_point()
@@ -907,8 +1194,13 @@ class CalibrationWindow:
         
         # Update calibration info
         data["calibration_level"] = self.selected_level
-        data["calibration_version"] = "1.1"
+        data["calibration_version"] = "1.2"  # Bumped version for area selection feature
         data["total_points"] = len(self.points)
+        
+        # Save selected area (new feature)
+        if self.selected_area:
+            data["calibration_area"] = self.selected_area
+            print(f"[CALIBRAÇÃO] Área de trabalho: {self.selected_area['width']}x{self.selected_area['height']}")
         
         # Save to file
         with open('AirScan_Calibration_Data.json', 'w') as f:
@@ -1056,9 +1348,25 @@ class CalibrationWindow:
             # Start update loop
             def update():
                 if not self.calibration_complete:
-                    if self.showing_level_selector:
+                    # Debug: log current state
+                    if hasattr(self, '_last_state'):
+                        current_state = "AREA" if self.showing_area_selector else ("LEVEL" if self.showing_level_selector else "CALIBRATION")
+                        if current_state != self._last_state:
+                            print(f"[DEBUG] Estado mudou: {self._last_state} → {current_state}")
+                            self._last_state = current_state
+                    else:
+                        self._last_state = "AREA"
+                        print(f"[DEBUG] Estado inicial: {self._last_state}")
+                    
+                    if self.showing_area_selector:
+                        # Show area selector (FIRST step)
+                        if not self.area_selector.selection_complete:
+                            self.area_selector.show(self.canvas)
+                    elif self.showing_level_selector:
+                        # Show level selector (SECOND step)
                         self.show_level_selector()
                     else:
+                        # Show calibration points (THIRD step)
                         self.show_current_point()
                     
                     # Ensure window stays focused for ESC to work

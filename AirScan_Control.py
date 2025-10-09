@@ -21,13 +21,13 @@ screen_width, screen_height = pyautogui.size()
 # ====================================
 # CONFIGURAÇÃO DO AIRSCAN
 # ====================================
-AIRSCAN_MODE = "Arena"  # Opções: "Arena" ou "Cave"
+AIRSCAN_MODE = "Cave"  # Opções: "Arena" ou "Cave"
 AIRSCAN_PORT = 8030
 
 # Configurações de Performance
 MOUSE_UPDATE_RATE = 60  # Hz - Taxa de atualização do mouse (60Hz recomendado)
-SMOOTHING_SAMPLES = 5   # Número de amostras para média móvel (3-10 recomendado)
-MOUSE_RELEASE_DELAY = 0.5  # segundos - Delay antes de soltar o mouse (grace period)
+SMOOTHING_SAMPLES = 2   # Número de amostras para média móvel (3-10 recomendado)
+MOUSE_RELEASE_DELAY = 0.1  # segundos - Delay antes de soltar o mouse (grace period)
 
 # Configurações padrão por modo
 MODE_CONFIG = {
@@ -64,6 +64,7 @@ class AirScanControl:
         self.norm_x = None
         self.norm_y = None
         self.calibration_data = self.load_calibration()
+        self.calibration_area = self.calibration_data.get("calibration_area", None)
         self.calibration_process = None
         self.calibration_complete = Event()
         self.last_log_time = 0
@@ -218,12 +219,24 @@ class AirScanControl:
                     self.last_warning_time = current_time
                 return self.get_default_coordinates(x, y)
             
-            screen_x = self.map_range(x, min_x, max_x, 0, screen_width)
-            screen_y = self.map_range(y, min_y, max_y, 0, screen_height)
-            
-            # Clamp coordinates to screen bounds
-            screen_x = max(0, min(screen_width, screen_x))
-            screen_y = max(0, min(screen_height, screen_y))
+            # NOVA LÓGICA: Mapear AirScan para a área calibrada
+            if self.calibration_area:
+                # Mapear coordenadas do AirScan para a área calibrada
+                area = self.calibration_area
+                screen_x = self.map_range(x, min_x, max_x, area["x1"], area["x2"])
+                screen_y = self.map_range(y, min_y, max_y, area["y1"], area["y2"])
+                
+                # Clamp coordinates to calibrated area bounds
+                screen_x = max(area["x1"], min(area["x2"], screen_x))
+                screen_y = max(area["y1"], min(area["y2"], screen_y))
+            else:
+                # Mapear para tela cheia (comportamento antigo)
+                screen_x = self.map_range(x, min_x, max_x, 0, screen_width)
+                screen_y = self.map_range(y, min_y, max_y, 0, screen_height)
+                
+                # Clamp coordinates to screen bounds
+                screen_x = max(0, min(screen_width, screen_x))
+                screen_y = max(0, min(screen_height, screen_y))
             
             return (int(screen_x), int(screen_y))
             
@@ -268,12 +281,13 @@ class AirScanControl:
                 final_x = int(smoothed_x)
                 final_y = int(smoothed_y)
                 
-                # Mover mouse para posição suavizada
+                # Mover mouse para posição suavizada (já mapeada corretamente)
                 pyautogui.moveTo(final_x, final_y)
                 
                 # Log coordinates with throttling (500ms)
                 if current_time - self.last_log_time >= self.log_interval:
-                    print(f"[AIRSCAN] X:{self.norm_x:.2f} Y:{self.norm_y:.2f} -> Tela({final_x}, {final_y}) [Suavizado: {len(self.x_history)} amostras]")
+                    area_info = f" [Área: {self.calibration_area['width']}x{self.calibration_area['height']}]" if self.calibration_area else ""
+                    print(f"[AIRSCAN] X:{self.norm_x:.2f} Y:{self.norm_y:.2f} -> Tela({final_x}, {final_y}){area_info}")
                     self.last_log_time = current_time
                     
             except Exception as e:
@@ -394,7 +408,10 @@ class AirScanControl:
                 else:
                     print("[CALIBRAÇÃO] Processo de calibração finalizado. Recarregando dados...")
                     self.calibration_data = self.load_calibration()
+                    self.calibration_area = self.calibration_data.get("calibration_area", None)
                     print("[CALIBRAÇÃO] Dados de calibração atualizados!")
+                    if self.calibration_area:
+                        print(f"[CALIBRAÇÃO] Nova área de trabalho: {self.calibration_area['width']}x{self.calibration_area['height']} pixels")
                 
                 self.calibration_complete.set()
                 print("[CALIBRAÇÃO] Sistema de controle continua ativo.")
@@ -479,6 +496,11 @@ class AirScanControl:
         # Display calibration status
         if self.calibration_data.get("points"):
             print(f"[INFO] Calibração ativa: {len(self.calibration_data['points'])} pontos")
+            if self.calibration_area:
+                print(f"[INFO] Área de trabalho: {self.calibration_area['width']}x{self.calibration_area['height']} pixels")
+                print(f"[INFO] Posição: ({self.calibration_area['x1']}, {self.calibration_area['y1']}) até ({self.calibration_area['x2']}, {self.calibration_area['y2']})")
+            else:
+                print(f"[INFO] Área de trabalho: Tela cheia ({screen_width}x{screen_height})")
         else:
             print("[WARNING] Nenhuma calibração encontrada. Pressione Shift+C para calibrar.")
         

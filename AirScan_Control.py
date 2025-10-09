@@ -60,7 +60,6 @@ class AirScanControl:
         self.server = None
         self.running = True
         self.shutdown_event = Event()
-        self.mouse_pressed = False
         self.norm_x = None
         self.norm_y = None
         self.calibration_data = self.load_calibration()
@@ -81,9 +80,17 @@ class AirScanControl:
         self.x_history = deque(maxlen=self.smoothing_window)
         self.y_history = deque(maxlen=self.smoothing_window)
         
-        # Grace period para soltar o mouse
-        self.release_timer = None
-        self.pending_release = False
+        # Sistema de detecção de dados (touch screen)
+        self.last_data_time = 0  # Última vez que recebeu dados X/Y
+        self.data_timeout = MOUSE_RELEASE_DELAY  # 0.3s sem dados = mouseUp
+        self.mouse_pressed = False
+        self.watchdog_timer = None  # Timer para detectar falta de dados
+        self.initial_position_set = False  # Flag para evitar arrasto inicial
+        
+        # Sistema de estabilização por raio
+        self.stable_position = None  # Posição estável atual (x, y)
+        self.stability_start_time = 0  # Quando começou a estabilização
+        self.is_position_stable = False  # Flag se posição está estável
         
         # Setup signal handlers for graceful shutdown
         self.setup_signal_handlers()
@@ -260,6 +267,12 @@ class AirScanControl:
             try:
                 current_time = time.time()
                 
+                # Atualiza timestamp de última recepção de dados
+                self.last_data_time = current_time
+                
+                # Reinicia watchdog timer
+                self.reset_watchdog_timer()
+                
                 # Throttling: limita taxa de atualização
                 if current_time - self.last_update_time < self.update_interval:
                     return  # Ignora esta atualização para manter taxa configurada
@@ -293,6 +306,53 @@ class AirScanControl:
             except Exception as e:
                 print(f"[ERROR] Failed to update mouse position: {e}")
     
+    def reset_watchdog_timer(self):
+        """Reinicia o timer de watchdog - cancela o antigo e cria novo"""
+        # Cancela timer existente
+        if self.watchdog_timer and self.watchdog_timer.is_alive():
+            self.watchdog_timer.cancel()
+        
+        # Cria novo timer que será chamado se não receber dados por 0.3s
+        self.watchdog_timer = threading.Timer(self.data_timeout, self.on_data_timeout)
+        self.watchdog_timer.daemon = True
+        self.watchdog_timer.start()
+    
+    def on_data_timeout(self):
+        """Chamado quando não recebe dados do AirScan por 0.3s"""
+        if self.mouse_pressed:
+            pyautogui.mouseUp()
+            self.mouse_pressed = False
+            self.initial_position_set = False  # Reset flag para próximo toque
+            # Reset sistema de estabilização
+            self.stable_position = None
+            self.is_position_stable = False
+            print(f"[TOUCH] MouseUp - sem dados por {self.data_timeout}s")
+    
+    def check_position_stability(self, x, y, current_time):
+        """Verifica se a posição está estável dentro do raio de tolerância"""
+        if self.stable_position is None:
+            # Primeira posição - inicia estabilização
+            self.stable_position = (x, y)
+            self.stability_start_time = current_time
+            self.is_position_stable = False
+            return
+        
+        # Calcula distância da posição estável atual
+        distance = ((x - self.stable_position[0])**2 + (y - self.stable_position[1])**2)**0.5
+        
+        if distance <= STABILITY_RADIUS:
+            # Dentro do raio - verifica se passou tempo suficiente
+            time_in_stability = current_time - self.stability_start_time
+            if time_in_stability >= STABILITY_TIME:
+                self.is_position_stable = True
+            else:
+                self.is_position_stable = False
+        else:
+            # Fora do raio - reinicia estabilização
+            self.stable_position = (x, y)
+            self.stability_start_time = current_time
+            self.is_position_stable = False
+    
     def handle_mouse_x(self, unused_addr, x):
         """Handle X coordinate from AirScan"""
         self.norm_x = x
@@ -317,43 +377,10 @@ class AirScanControl:
                 print(f"[WARNING] Failed to write coordinates to temp file: {e}")
     
     def handle_mouse_click(self, unused_addr, z):
-        """Handle click state from AirScan with grace period"""
-        if z == 1:
-            # Toque detectado
-            if self.pending_release:
-                # Cancelar timer de release se estava aguardando
-                if self.release_timer and self.release_timer.is_alive():
-                    self.release_timer.cancel()
-                    # Log apenas em modo debug (descomente se necessário)
-                    # print("[MOUSE] Release cancelado - toque retomado dentro do grace period")
-                self.pending_release = False
-                self.release_timer = None
-            
-            if not self.mouse_pressed:
-                # Pressionar mouse pela primeira vez
-                pyautogui.mouseDown()
-                self.mouse_pressed = True
-                # print("[MOUSE] Mouse pressionado")
-                
-        elif z == 0:
-            # Toque perdido
-            if self.mouse_pressed and not self.pending_release:
-                # Iniciar grace period ao invés de soltar imediatamente
-                self.pending_release = True
-                
-                def delayed_release():
-                    """Função executada após o grace period"""
-                    if self.pending_release and self.mouse_pressed:
-                        pyautogui.mouseUp()
-                        self.mouse_pressed = False
-                        self.pending_release = False
-                        # print(f"[MOUSE] Mouse liberado após {MOUSE_RELEASE_DELAY}s sem sinal")
-                
-                # Iniciar timer
-                self.release_timer = threading.Timer(MOUSE_RELEASE_DELAY, delayed_release)
-                self.release_timer.daemon = True
-                self.release_timer.start()
-                # print(f"[MOUSE] Grace period iniciado ({MOUSE_RELEASE_DELAY}s) - aguardando confirmação")
+        """Handle click state from AirScan - não usado mais (detecção por falta de dados X/Y)"""
+        # Este método não faz nada - a detecção de mouseUp é feita por watchdog timer
+        # quando para de receber dados X/Y
+        pass
     
     def start_calibration(self):
         """Launch calibration tool"""
@@ -480,7 +507,7 @@ class AirScanControl:
         print(f"[CONFIG] Modo: {AIRSCAN_MODE} (Blob {BLOB_ID})")
         print(f"[CONFIG] Taxa de atualização: {MOUSE_UPDATE_RATE}Hz (~{1000/MOUSE_UPDATE_RATE:.1f}ms)")
         print(f"[CONFIG] Suavização: {SMOOTHING_SAMPLES} amostras (média móvel)")
-        print(f"[CONFIG] Grace period: {MOUSE_RELEASE_DELAY}s (tolerância ao soltar)")
+        print(f"[CONFIG] Sistema Touch Screen: Watchdog {MOUSE_RELEASE_DELAY}s (sem dados = mouseUp)")
         print(f"[CONFIG] Resolução AirScan: {DEFAULT_AIRSCAN_WIDTH}x{DEFAULT_AIRSCAN_HEIGHT}")
         print(f"[CONFIG] Resolução Tela: {screen_width}x{screen_height}")
         
@@ -566,10 +593,10 @@ class AirScanControl:
         except:
             pass
         
-        # Cancelar timer de release se existir
-        if self.release_timer and self.release_timer.is_alive():
-            self.release_timer.cancel()
-            print("[INFO] Timer de release cancelado")
+        # Cancelar watchdog timer se existir
+        if self.watchdog_timer and self.watchdog_timer.is_alive():
+            self.watchdog_timer.cancel()
+            print("[INFO] Watchdog timer cancelado")
         
         # Finalizar processo de calibração se existir
         if self.calibration_process and self.calibration_process.poll() is None:
